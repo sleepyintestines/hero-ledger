@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../auth/provider";
 import AddTaskModal from "./AddTaskModal";
 import EditTaskModal from "./EditTaskModal";
+import UserPanel from "./UserPanel";
 
 export default function Tasks() {
     const { user } = useAuth();
@@ -265,6 +266,8 @@ export default function Tasks() {
 
     return (
         <div style={{ padding: "20px", maxWidth: "1400px", margin: "0 auto" }}>
+            <UserPanel />
+            
             <div style={{
                 display: "flex",
                 justifyContent: "space-between",
