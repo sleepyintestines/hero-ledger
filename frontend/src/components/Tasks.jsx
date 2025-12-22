@@ -1,24 +1,20 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../auth/provider";
+import AddTaskModal from "./AddTaskModal";
+import EditTaskModal from "./EditTaskModal";
 
 export default function Tasks() {
     const { user } = useAuth();
-    
-    // Daily tasks (reset daily, no deadlines)
+
     const [dailyTasks, setDailyTasks] = useState([]);
-    const [newDailyTask, setNewDailyTask] = useState("");
-    const [newDailyTaskDesc, setNewDailyTaskDesc] = useState("");
-
-    // Normal tasks (with deadlines)
     const [normalTasks, setNormalTasks] = useState([]);
-    const [newNormalTask, setNewNormalTask] = useState("");
-    const [newNormalTaskDesc, setNewNormalTaskDesc] = useState("");
-    const [newNormalTaskDeadline, setNewNormalTaskDeadline] = useState("");
-
     const [loading, setLoading] = useState(true);
 
-    // Fetch tasks from database
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingTask, setEditingTask] = useState(null);
+
     useEffect(() => {
         if (user) {
             fetchTasks();
@@ -27,19 +23,14 @@ export default function Tasks() {
 
     const fetchTasks = async () => {
         try {
-            console.log('Fetching tasks for user:', user.id);
-            
             const { data, error } = await supabase
                 .from('tasks')
                 .select('*')
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: false });
 
-            console.log('Fetch result:', { data, error });
-            
             if (error) throw error;
 
-            // Split tasks by type
             const daily = data.filter(task => task.task_type === 'recurring');
             const normal = data.filter(task => task.task_type === 'normal');
 
@@ -52,20 +43,13 @@ export default function Tasks() {
         }
     };
 
-    // Add daily task
-    const addDailyTask = async () => {
-        if (!newDailyTask.trim()) return;
-        
+    const handleAddTask = async (taskData) => {
         try {
             const { data, error } = await supabase
                 .from('tasks')
                 .insert([{
                     user_id: user.id,
-                    title: newDailyTask,
-                    description: newDailyTaskDesc || null,
-                    task_type: 'recurring',
-                    difficulty: 'easy',
-                    ap_reward: 10,
+                    ...taskData,
                     is_complete: false
                 }])
                 .select()
@@ -73,336 +57,320 @@ export default function Tasks() {
 
             if (error) throw error;
 
-            setDailyTasks([data, ...dailyTasks]);
-            setNewDailyTask("");
-            setNewDailyTaskDesc("");
+            if (taskData.task_type === 'recurring') {
+                setDailyTasks([data, ...dailyTasks]);
+            } else {
+                setNormalTasks([data, ...normalTasks]);
+            }
         } catch (error) {
-            console.error('Error adding daily task:', error);
+            console.error('Error adding task:', error);
         }
     };
 
-    // Add normal task
-    const addNormalTask = async () => {
-        if (!newNormalTask.trim()) return;
-        
-        try {
-            const { data, error } = await supabase
-                .from('tasks')
-                .insert([{
-                    user_id: user.id,
-                    title: newNormalTask,
-                    description: newNormalTaskDesc || null,
-                    task_type: 'normal',
-                    difficulty: 'medium',
-                    ap_reward: 20,
-                    due_date: newNormalTaskDeadline || null,
-                    is_complete: false
-                }])
-                .select()
-                .single();
-
-            if (error) throw error;
-
-            setNormalTasks([data, ...normalTasks]);
-            setNewNormalTask("");
-            setNewNormalTaskDesc("");
-            setNewNormalTaskDeadline("");
-        } catch (error) {
-            console.error('Error adding normal task:', error);
-        }
-    };
-
-    // Toggle task completion
-    const toggleDailyTask = async (id) => {
-        const task = dailyTasks.find(t => t.id === id);
-        
+    const handleUpdateTask = async (id, updatedData) => {
         try {
             const { error } = await supabase
                 .from('tasks')
-                .update({ is_complete: !task.is_complete })
+                .update(updatedData)
                 .eq('id', id);
 
             if (error) throw error;
 
-            setDailyTasks(dailyTasks.map(task =>
-                task.id === id ? { ...task, is_complete: !task.is_complete } : task
-            ));
+            if (editingTask.task_type === 'recurring') {
+                setDailyTasks(dailyTasks.map(task =>
+                    task.id === id ? { ...task, ...updatedData } : task
+                ));
+            } else {
+                setNormalTasks(normalTasks.map(task =>
+                    task.id === id ? { ...task, ...updatedData } : task
+                ));
+            }
+        } catch (error) {
+            console.error('Error updating task:', error);
+        }
+    };
+
+    const toggleTask = async (task) => {
+        try {
+            const { error } = await supabase
+                .from('tasks')
+                .update({ is_complete: !task.is_complete })
+                .eq('id', task.id);
+
+            if (error) throw error;
+
+            if (task.task_type === 'recurring') {
+                setDailyTasks(dailyTasks.map(t =>
+                    t.id === task.id ? { ...t, is_complete: !t.is_complete } : t
+                ));
+            } else {
+                setNormalTasks(normalTasks.map(t =>
+                    t.id === task.id ? { ...t, is_complete: !t.is_complete } : t
+                ));
+            }
         } catch (error) {
             console.error('Error toggling task:', error);
         }
     };
 
-    const toggleNormalTask = async (id) => {
-        const task = normalTasks.find(t => t.id === id);
-        
-        try {
-            const { error } = await supabase
-                .from('tasks')
-                .update({ is_complete: !task.is_complete })
-                .eq('id', id);
+    const deleteTask = async (task) => {
+        if (!window.confirm('Are you sure you want to delete this task?')) return;
 
-            if (error) throw error;
-
-            setNormalTasks(normalTasks.map(task =>
-                task.id === id ? { ...task, is_complete: !task.is_complete } : task
-            ));
-        } catch (error) {
-            console.error('Error toggling task:', error);
-        }
-    };
-
-    // Delete tasks
-    const deleteDailyTask = async (id) => {
         try {
             const { error } = await supabase
                 .from('tasks')
                 .delete()
-                .eq('id', id);
+                .eq('id', task.id);
 
             if (error) throw error;
 
-            setDailyTasks(dailyTasks.filter(task => task.id !== id));
+            if (task.task_type === 'recurring') {
+                setDailyTasks(dailyTasks.filter(t => t.id !== task.id));
+            } else {
+                setNormalTasks(normalTasks.filter(t => t.id !== task.id));
+            }
         } catch (error) {
             console.error('Error deleting task:', error);
         }
     };
 
-    const deleteNormalTask = async (id) => {
-        try {
-            const { error } = await supabase
-                .from('tasks')
-                .delete()
-                .eq('id', id);
+    const handleEditClick = (task) => {
+        setEditingTask(task);
+        setIsEditModalOpen(true);
+    };
 
-            if (error) throw error;
+    const renderTask = (task) => {
+        const difficultyColor = task.difficulty === 'easy' ? '#28a745' :
+            task.difficulty === 'medium' ? '#ffc107' : '#dc3545';
 
-            setNormalTasks(normalTasks.filter(task => task.id !== id));
-        } catch (error) {
-            console.error('Error deleting task:', error);
-        }
+        return (
+            <div
+                key={task.id}
+                onClick={() => handleEditClick(task)}
+                style={{
+                    padding: "15px",
+                    marginBottom: "12px",
+                    backgroundColor: "white",
+                    borderRadius: "6px",
+                    border: "1px solid #e0e0e0",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                }}
+                onMouseOver={(e) => {
+                    e.currentTarget.style.borderColor = "#007bff";
+                    e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,123,255,0.15)";
+                }}
+                onMouseOut={(e) => {
+                    e.currentTarget.style.borderColor = "#e0e0e0";
+                    e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.05)";
+                }}
+            >
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                    <input
+                        type="checkbox"
+                        checked={task.is_complete}
+                        onChange={(e) => {
+                            e.stopPropagation();
+                            toggleTask(task);
+                        }}
+                        style={{
+                            cursor: "pointer",
+                            marginTop: "3px",
+                            width: "18px",
+                            height: "18px"
+                        }}
+                    />
+                    <div style={{ flex: 1 }}>
+                        <div style={{
+                            fontWeight: "500",
+                            fontSize: "15px",
+                            color: task.is_complete ? "#999" : "#333",
+                            textDecoration: task.is_complete ? "line-through" : "none",
+                            marginBottom: "6px"
+                        }}>
+                            {task.title}
+                        </div>
+                        {task.description && (
+                            <div style={{
+                                fontSize: "13px",
+                                color: "#666",
+                                marginBottom: "6px",
+                                lineHeight: "1.4"
+                            }}>
+                                {task.description}
+                            </div>
+                        )}
+                        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{
+                                display: "inline-block",
+                                padding: "3px 8px",
+                                backgroundColor: difficultyColor,
+                                color: "white",
+                                borderRadius: "3px",
+                                fontSize: "11px",
+                                fontWeight: "600"
+                            }}>
+                                {task.difficulty.toUpperCase()} • {task.ap_reward} AP
+                            </span>
+                            {task.due_date && (
+                                <span style={{
+                                    display: "inline-block",
+                                    padding: "3px 8px",
+                                    backgroundColor: "#f0f0f0",
+                                    color: "#555",
+                                    borderRadius: "3px",
+                                    fontSize: "11px"
+                                }}>
+                                    Due: {new Date(task.due_date).toLocaleDateString()}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            deleteTask(task);
+                        }}
+                        style={{
+                            padding: "6px 10px",
+                            backgroundColor: "#dc3545",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: "500"
+                        }}
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+        );
     };
 
     if (loading) {
-        return <div style={{ padding: "20px" }}>Loading tasks...</div>;
+        return (
+            <div style={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                minHeight: "400px"
+            }}>
+                <div style={{ fontSize: "18px", color: "#666" }}>Loading tasks...</div>
+            </div>
+        );
     }
 
     return (
-        <div style={{ display: "flex", gap: "30px", marginTop: "20px" }}>
-            {/* Daily Tasks Section */}
-            <div style={{ flex: 1 }}>
-                <h2>Daily Tasks</h2>
-                <div style={{ marginBottom: "20px" }}>
-                    <input
-                        type="text"
-                        value={newDailyTask}
-                        onChange={(e) => setNewDailyTask(e.target.value)}
-                        onKeyPress={(e) => e.key === "Enter" && addDailyTask()}
-                        placeholder="Add daily task..."
-                        style={{
-                            width: "100%",
-                            padding: "10px",
-                            marginBottom: "10px",
-                            fontSize: "14px"
-                        }}
-                    />
-                    <input
-                        type="text"
-                        value={newDailyTaskDesc}
-                        onChange={(e) => setNewDailyTaskDesc(e.target.value)}
-                        placeholder="Description (optional)..."
-                        style={{
-                            width: "100%",
-                            padding: "10px",
-                            marginBottom: "10px",
-                            fontSize: "14px"
-                        }}
-                    />
-                    <button
-                        onClick={addDailyTask}
-                        style={{
-                            padding: "10px 20px",
-                            backgroundColor: "#007bff",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer"
-                        }}
-                    >
-                        Add Task
-                    </button>
+        <div style={{ padding: "20px", maxWidth: "1400px", margin: "0 auto" }}>
+            <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "30px"
+            }}>
+                <h1 style={{ margin: 0, color: "#333" }}>My Tasks</h1>
+                <button
+                    onClick={() => setIsAddModalOpen(true)}
+                    style={{
+                        padding: "12px 24px",
+                        backgroundColor: "#6f42c1",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontSize: "16px",
+                        fontWeight: "600",
+                        boxShadow: "0 2px 4px rgba(111, 66, 193, 0.3)"
+                    }}
+                >
+                    Add Task
+                </button>
+            </div>
+
+            <div style={{ display: "flex", gap: "30px" }}>
+                {/* Daily Tasks Column */}
+                <div style={{ flex: 1 }}>
+                    <div style={{
+                        backgroundColor: "#f8f9fa",
+                        borderRadius: "8px",
+                        padding: "20px",
+                        border: "2px solid #e9ecef",
+                        minHeight: "400px"
+                    }}>
+                        <h2 style={{
+                            margin: "0 0 20px 0",
+                            color: "#495057",
+                            fontSize: "20px",
+                            fontWeight: "600"
+                        }}>
+                            Daily Tasks
+                        </h2>
+                        {dailyTasks.length === 0 ? (
+                            <p style={{
+                                color: "#6c757d",
+                                fontStyle: "italic",
+                                textAlign: "center",
+                                marginTop: "40px"
+                            }}>
+                                No daily tasks yet
+                            </p>
+                        ) : (
+                            dailyTasks.map(task => renderTask(task))
+                        )}
+                    </div>
                 </div>
 
-                <div>
-                    {dailyTasks.length === 0 ? (
-                        <p style={{ color: "#666", fontStyle: "italic" }}>No daily tasks yet</p>
-                    ) : (
-                        dailyTasks.map(task => (
-                            <div
-                                key={task.id}
-                                style={{
-                                    padding: "12px",
-                                    marginBottom: "10px",
-                                    backgroundColor: "#f8f9fa",
-                                    borderRadius: "4px",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "10px"
-                                }}
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={task.is_complete}
-                                    onChange={() => toggleDailyTask(task.id)}
-                                    style={{ cursor: "pointer" }}
-                                />
-                                <div style={{ flex: 1 }}>
-                                    <div style={{
-                                        textDecoration: task.is_complete ? "line-through" : "none",
-                                        color: task.is_complete ? "#999" : "#333"
-                                    }}>
-                                        {task.title}
-                                    </div>
-                                    {task.description && (
-                                        <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
-                                            {task.description}
-                                        </div>
-                                    )}
-                                </div>
-                                <button
-                                    onClick={() => deleteDailyTask(task.id)}
-                                    style={{
-                                        padding: "4px 8px",
-                                        backgroundColor: "#dc3545",
-                                        color: "white",
-                                        border: "none",
-                                        borderRadius: "3px",
-                                        cursor: "pointer",
-                                        fontSize: "12px"
-                                    }}
-                                >
-                                    Delete
-                                </button>
-                            </div>
-                        ))
-                    )}
+                {/* Normal Tasks Column */}
+                <div style={{ flex: 1 }}>
+                    <div style={{
+                        backgroundColor: "#f8f9fa",
+                        borderRadius: "8px",
+                        padding: "20px",
+                        border: "2px solid #e9ecef",
+                        minHeight: "400px"
+                    }}>
+                        <h2 style={{
+                            margin: "0 0 20px 0",
+                            color: "#495057",
+                            fontSize: "20px",
+                            fontWeight: "600"
+                        }}>
+                            Tasks
+                        </h2>
+                        {normalTasks.length === 0 ? (
+                            <p style={{
+                                color: "#6c757d",
+                                fontStyle: "italic",
+                                textAlign: "center",
+                                marginTop: "40px"
+                            }}>
+                                No tasks yet
+                            </p>
+                        ) : (
+                            normalTasks.map(task => renderTask(task))
+                        )}
+                    </div>
                 </div>
             </div>
 
-            {/* Normal Tasks Section */}
-            <div style={{ flex: 1 }}>
-                <h2>Tasks</h2>
-                <div style={{ marginBottom: "20px" }}>
-                    <input
-                        type="text"
-                        value={newNormalTask}
-                        onChange={(e) => setNewNormalTask(e.target.value)}
-                        onKeyPress={(e) => e.key === "Enter" && addNormalTask()}
-                        placeholder="Add task..."
-                        style={{
-                            width: "100%",
-                            padding: "10px",
-                            marginBottom: "10px",
-                            fontSize: "14px"
-                        }}
-                    />
-                    <input
-                        type="text"
-                        value={newNormalTaskDesc}
-                        onChange={(e) => setNewNormalTaskDesc(e.target.value)}
-                        placeholder="Description (optional)..."
-                        style={{
-                            width: "100%",
-                            padding: "10px",
-                            marginBottom: "10px",
-                            fontSize: "14px"
-                        }}
-                    />
-                    <input
-                        type="date"
-                        value={newNormalTaskDeadline}
-                        onChange={(e) => setNewNormalTaskDeadline(e.target.value)}
-                        style={{
-                            width: "100%",
-                            padding: "10px",
-                            marginBottom: "10px",
-                            fontSize: "14px"
-                        }}
-                    />
-                    <button
-                        onClick={addNormalTask}
-                        style={{
-                            padding: "10px 20px",
-                            backgroundColor: "#28a745",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer"
-                        }}
-                    >
-                        Add Task
-                    </button>
-                </div>
+            <AddTaskModal
+                isOpen={isAddModalOpen}
+                onClose={() => setIsAddModalOpen(false)}
+                onAdd={handleAddTask}
+            />
 
-                <div>
-                    {normalTasks.length === 0 ? (
-                        <p style={{ color: "#666", fontStyle: "italic" }}>No tasks yet</p>
-                    ) : (
-                        normalTasks.map(task => (
-                            <div
-                                key={task.id}
-                                style={{
-                                    padding: "12px",
-                                    marginBottom: "10px",
-                                    backgroundColor: "#f8f9fa",
-                                    borderRadius: "4px",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "10px"
-                                }}
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={task.is_complete}
-                                    onChange={() => toggleNormalTask(task.id)}
-                                    style={{ cursor: "pointer" }}
-                                />
-                                <div style={{ flex: 1 }}>
-                                    <div style={{
-                                        textDecoration: task.is_complete ? "line-through" : "none",
-                                        color: task.is_complete ? "#999" : "#333"
-                                    }}>
-                                        {task.title}
-                                    </div>
-                                    {task.description && (
-                                        <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
-                                            {task.description}
-                                        </div>
-                                    )}
-                                    {task.due_date && (
-                                        <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
-                                            Due: {new Date(task.due_date).toLocaleDateString()}
-                                        </div>
-                                    )}
-                                </div>
-                                <button
-                                    onClick={() => deleteNormalTask(task.id)}
-                                    style={{
-                                        padding: "4px 8px",
-                                        backgroundColor: "#dc3545",
-                                        color: "white",
-                                        border: "none",
-                                        borderRadius: "3px",
-                                        cursor: "pointer",
-                                        fontSize: "12px"
-                                    }}
-                                >
-                                    Delete
-                                </button>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
+            <EditTaskModal
+                isOpen={isEditModalOpen}
+                onClose={() => {
+                    setIsEditModalOpen(false);
+                    setEditingTask(null);
+                }}
+                onUpdate={handleUpdateTask}
+                task={editingTask}
+            />
         </div>
     );
 }
