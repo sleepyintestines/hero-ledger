@@ -92,21 +92,55 @@ export default function Tasks() {
     };
 
     const toggleTask = async (task) => {
+        const newCompleteStatus = !task.is_complete;
+        
         try {
-            const { error } = await supabase
+            // Update task completion status
+            const { error: taskError } = await supabase
                 .from('tasks')
-                .update({ is_complete: !task.is_complete })
+                .update({ is_complete: newCompleteStatus })
                 .eq('id', task.id);
 
-            if (error) throw error;
+            if (taskError) throw taskError;
 
+            // If completing task (not uncompleting), award AP points
+            if (newCompleteStatus) {
+                // Get current user stats
+                const { data: stats, error: statsError } = await supabase
+                    .from('user_stats')
+                    .select('action_points')
+                    .eq('user_id', user.id)
+                    .single();
+
+                if (statsError) {
+                    console.error('Error fetching user stats:', statsError);
+                } else {
+                    // Update user's action points
+                    const newAP = (stats.action_points || 0) + task.ap_reward;
+                    const { error: updateError } = await supabase
+                        .from('user_stats')
+                        .update({ 
+                            action_points: newAP,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('user_id', user.id);
+
+                    if (updateError) {
+                        console.error('Error updating action points:', updateError);
+                    } else {
+                        console.log(`Awarded ${task.ap_reward} AP! Total: ${newAP}`);
+                    }
+                }
+            }
+
+            // Update local state
             if (task.task_type === 'recurring') {
                 setDailyTasks(dailyTasks.map(t =>
-                    t.id === task.id ? { ...t, is_complete: !t.is_complete } : t
+                    t.id === task.id ? { ...t, is_complete: newCompleteStatus } : t
                 ));
             } else {
                 setNormalTasks(normalTasks.map(t =>
-                    t.id === task.id ? { ...t, is_complete: !t.is_complete } : t
+                    t.id === task.id ? { ...t, is_complete: newCompleteStatus } : t
                 ));
             }
         } catch (error) {
@@ -171,6 +205,10 @@ export default function Tasks() {
                     <input
                         type="checkbox"
                         checked={task.is_complete}
+                        onClick={(e) => {
+                            // prevents opening of edit modal when clicking checkboxs
+                            e.stopPropagation();
+                        }}
                         onChange={(e) => {
                             e.stopPropagation();
                             toggleTask(task);
@@ -267,7 +305,7 @@ export default function Tasks() {
     return (
         <div style={{ padding: "20px", maxWidth: "1400px", margin: "0 auto" }}>
             <UserPanel />
-            
+
             <div style={{
                 display: "flex",
                 justifyContent: "space-between",

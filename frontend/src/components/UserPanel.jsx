@@ -6,12 +6,46 @@ export default function UserPanel() {
     const { user } = useAuth();
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [actionPoints, setActionPoints] = useState(0);
 
     useEffect(() => {
         if (user) {
             fetchUserStats();
+            fetchActionPoints();
+
+            // Subscribe to changes in user_stats
+            const subscription = supabase
+                .channel('user_stats_changes')
+                .on('postgres_changes', {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'user_stats',
+                    filter: `user_id=eq.${user.id}`
+                }, (payload) => {
+                    setActionPoints(payload.new.action_points);
+                })
+                .subscribe();
+
+            return () => {
+                subscription.unsubscribe();
+            };
         }
     }, [user]);
+
+    const fetchActionPoints = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('user_stats')
+                .select('action_points')
+                .eq('user_id', user.id)
+                .single();
+
+            if (error) throw error;
+            setActionPoints(data?.action_points || 0);
+        } catch (error) {
+            console.error('Error fetching action points:', error);
+        }
+    };
 
     const fetchUserStats = async () => {
         try {
@@ -151,7 +185,7 @@ export default function UserPanel() {
                     </p>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '28px', fontWeight: 'bold' }}>⚡ {stats.action_points} AP</div>
+                    <div style={{ fontSize: '28px', fontWeight: 'bold' }}>⚡ {actionPoints} AP</div>
                     <div style={{ fontSize: '12px', opacity: 0.9 }}>Action Points</div>
                 </div>
             </div>

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../auth/provider";
@@ -16,14 +17,10 @@ export default function Navbar() {
             backgroundColor: "#333",
             padding: "15px 30px",
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: "right",
             alignItems: "center",
             color: "white"
         }}>
-            <div style={{ fontSize: "20px", fontWeight: "bold" }}>
-                Todo List App
-            </div>
-
             {user && (
                 <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
                     <span style={{ fontSize: "14px" }}>
